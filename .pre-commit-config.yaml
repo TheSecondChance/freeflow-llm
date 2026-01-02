@@ -1,0 +1,47 @@
+# Pre-commit hooks configuration
+
+repos:
+  # Black - Code formatting
+  - repo: https://github.com/psf/black
+    rev: 25.12.0
+    hooks:
+      - id: black
+        language_version: python3.11
+        args: [--line-length=100]
+
+  # Ruff - Fast Python linter
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.10
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+
+  # MyPy - Static type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.19.1
+    hooks:
+      - id: mypy
+        args: [--ignore-missing-imports, --show-error-codes]
+
+  # Security checks
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.2
+    hooks:
+      - id: bandit
+        args: [-ll, -r, src/]
+
+  # Import sorting
+  - repo: https://github.com/PyCQA/isort
+    rev: 7.0.0
+    hooks:
+      - id: isort
+        args: [--profile=black, --line-length=100]
+
+  # Check for circular imports
+  - repo: local
+    hooks:
+      - id: check-circular-imports
+        name: Check for circular imports
+        entry: python -c "import sys; sys.path.insert(0, 'src'); import freeflow_llm; print('No circular imports detected')"
+        language: system
+        pass_filenames: false
