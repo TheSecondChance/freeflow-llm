@@ -53,7 +53,7 @@ class GroqProvider(BaseProvider):
 
         try:
             response = self.client.chat.completions.create(
-                messages=messages,  # type: ignore[arg-type]
+                messages=messages,
                 model=model,
                 temperature=temperature,
                 max_tokens=max_tokens or 1024,
