@@ -20,7 +20,7 @@ class GeminiProvider(BaseProvider):
         """Build HTTP headers with Gemini API key."""
         return {
             "Content-Type": "application/json",
-            "x-goog-api-key": self.api_key or "",
+            "x-goog-api-key": f"{self.api_key}",
         }
 
     def _convert_messages_to_gemini_format(

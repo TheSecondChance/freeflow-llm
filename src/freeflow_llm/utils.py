@@ -28,14 +28,14 @@ def get_api_key(provider: str) -> Optional[str]:
     Get API key for a specific provider.
 
     Args:
-        provider: Provider name (e.g., 'groq', 'google')
+        provider: Provider name (e.g., 'groq', 'gemini')
 
     Returns:
         API key if found, None otherwise
     """
     key_mapping = {
         "groq": "GROQ_API_KEY",
-        "google": "GOOGLE_API_KEY",
+        "gemini": "GEMINI_API_KEY",
     }
 
     env_key = key_mapping.get(provider.lower())
