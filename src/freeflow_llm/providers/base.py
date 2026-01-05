@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from typing import Any, Optional
 
 from ..models import FreeFlowResponse
@@ -50,6 +51,36 @@ class BaseProvider(ABC):
 
         Returns:
             FreeFlowResponse object
+
+        Raises:
+            RateLimitError: If rate limit is hit
+            ProviderError: For other provider errors
+        """
+        pass
+
+    @abstractmethod
+    def chat_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float = 1.0,
+        max_tokens: Optional[int] = None,
+        top_p: float = 1.0,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Iterator[FreeFlowResponse]:
+        """
+        Create a streaming chat completion.
+
+        Args:
+            messages: List of message dictionaries with 'role' and 'content'
+            temperature: Sampling temperature (0-2)
+            max_tokens: Maximum tokens to generate
+            top_p: Nucleus sampling parameter
+            model: Optional model name (provider-specific)
+            **kwargs: Additional provider-specific parameters
+
+        Yields:
+            FreeFlowResponse objects with partial content
 
         Raises:
             RateLimitError: If rate limit is hit

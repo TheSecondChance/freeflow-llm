@@ -1,10 +1,12 @@
 import logging
+from collections.abc import Iterator
 from typing import Any, Optional
 
 from .exceptions import NoProvidersAvailableError, ProviderError, RateLimitError
 from .models import FreeFlowResponse
 from .providers import (
     BaseProvider,
+    GeminiProvider,
     GroqProvider,
 )
 
@@ -54,6 +56,7 @@ class FreeFlowClient:
         if providers is None:
             default_providers: list[BaseProvider] = [
                 GroqProvider(),
+                GeminiProvider(),
             ]
             self.providers = [p for p in default_providers if p.is_available()]
         else:
@@ -114,6 +117,87 @@ class FreeFlowClient:
                     logger.info(f"Success with provider: {provider.name}")
 
                 return completion
+
+            except RateLimitError as e:
+                attempts.append(f"{provider.name}: rate limited")
+                if self.verbose:
+                    logger.warning(f"Rate limit hit on {provider.name}, trying next provider...")
+                last_error = e
+                continue
+
+            except ProviderError as e:
+                attempts.append(f"{provider.name}: {str(e)}")
+                if self.verbose:
+                    logger.warning(f"Error with {provider.name}: {str(e)}, trying next provider...")
+                last_error = e
+                continue
+
+            except Exception as e:
+                attempts.append(f"{provider.name}: unexpected error")
+                if self.verbose:
+                    logger.warning(
+                        f"Unexpected error with {provider.name}: {str(e)}, trying next provider..."
+                    )
+                last_error = e
+                continue
+
+        error_summary = "\n".join(f"  - {attempt}" for attempt in attempts)
+        raise NoProvidersAvailableError(
+            f"All providers exhausted. Attempts:\n{error_summary}\n\nLast error: {last_error}"
+        )
+
+    def chat_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float = 1.0,
+        max_tokens: Optional[int] = None,
+        top_p: float = 1.0,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Iterator[FreeFlowResponse]:
+        """
+        Create a streaming chat completion with automatic provider fallback.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            temperature: Sampling temperature (0-2)
+            max_tokens: Maximum tokens to generate
+            top_p: Nucleus sampling parameter
+            model: Optional model name (provider-specific)
+            **kwargs: Additional parameters
+
+        Yields:
+            FreeFlowResponse objects with partial content
+
+        Raises:
+            NoProvidersAvailableError: If all providers fail
+        """
+        if not self.providers:
+            raise NoProvidersAvailableError(
+                "No providers configured. Please set API keys in environment variables."
+            )
+
+        last_error: Optional[Exception] = None
+        attempts: list[str] = []
+
+        for provider in self.providers:
+            try:
+                if self.verbose:
+                    logger.info(f"Attempting provider: {provider.name}")
+
+                yield from provider.chat_stream(
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    top_p=top_p,
+                    model=model,
+                    **kwargs,
+                )
+
+                if self.verbose:
+                    logger.info(f"Success with provider: {provider.name}")
+
+                return
 
             except RateLimitError as e:
                 attempts.append(f"{provider.name}: rate limited")

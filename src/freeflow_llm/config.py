@@ -8,6 +8,7 @@ DEFAULT_MAX_TOKENS = 1024
 
 DEFAULT_MODELS = {
     "groq": "llama-3.3-70b-versatile",
+    "gemini": "gemini-2.5-flash",
 }
 
 DEFAULT_TEMPERATURE = 1.0

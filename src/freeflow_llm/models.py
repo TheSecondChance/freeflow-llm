@@ -18,17 +18,29 @@ class Choice:
     """Represents a completion choice."""
 
     index: int
-    message: Message
+    message: Optional[Message] = None
+    delta: Optional[dict[str, str]] = None
     finish_reason: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Choice":
-        return cls(
-            index=data.get("index", 0),
-            message=Message(
+        message = None
+        delta = None
+
+        if "message" in data:
+            message = Message(
                 role=data.get("message", {}).get("role", "assistant"),
                 content=data.get("message", {}).get("content", ""),
-            ),
+            )
+
+        # Handle streaming responses (delta)
+        if "delta" in data:
+            delta = data.get("delta", {})
+
+        return cls(
+            index=data.get("index", 0),
+            message=message,
+            delta=delta,
             finish_reason=data.get("finish_reason"),
         )
 
@@ -66,7 +78,13 @@ class FreeFlowResponse:
     def content(self) -> str:
         """Convenience property to get the response content directly."""
         if self.choices and len(self.choices) > 0:
-            return self.choices[0].message.content
+            choice = self.choices[0]
+            # For streaming responses, get delta content
+            if choice.delta:
+                return choice.delta.get("content", "")
+            # For non-streaming responses, get message content
+            if choice.message:
+                return choice.message.content
         return ""
 
     @classmethod

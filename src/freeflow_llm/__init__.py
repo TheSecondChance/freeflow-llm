@@ -32,6 +32,7 @@ from .exceptions import (
 from .models import Choice, FreeFlowResponse, Message, Usage
 from .providers import (
     BaseProvider,
+    GeminiProvider,
     GroqProvider,
 )
 
@@ -50,5 +51,6 @@ __all__ = [
     "InvalidAPIKeyError",
     "BaseProvider",
     "GroqProvider",
+    "GeminiProvider",
     "config",
 ]

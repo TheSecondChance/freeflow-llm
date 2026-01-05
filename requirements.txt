@@ -20,5 +20,5 @@ pycln>=2.1.0
 ipython>=8.0.0
 
 
-# Providers
-groq>=0.4.0
+# HTTP client for direct API calls
+httpx>=0.27.0
