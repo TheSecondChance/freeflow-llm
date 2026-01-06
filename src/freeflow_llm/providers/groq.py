@@ -33,7 +33,7 @@ class GroqProvider(BaseProvider):
         stream: bool = False,
         **kwargs: Any,
     ) -> tuple[str, dict[str, Any]]:
-        """Build OpenAI-compatible request payload."""
+        """Build internal request payload."""
         json_data = {
             "model": model,
             "messages": messages,
@@ -51,7 +51,7 @@ class GroqProvider(BaseProvider):
         return "/chat/completions", json_data
 
     def parse_response(self, response_data: dict[str, Any], model: str) -> FreeFlowResponse:
-        """Parse OpenAI-compatible response."""
+        """Parse provider-specific response."""
         return FreeFlowResponse.from_dict(
             {
                 "id": response_data.get("id", f"chatcmpl-{int(time.time())}"),
@@ -85,7 +85,7 @@ class GroqProvider(BaseProvider):
     def parse_stream_chunk(
         self, chunk_data: dict[str, Any], model: str
     ) -> Optional[FreeFlowResponse]:
-        """Parse OpenAI-compatible streaming chunk."""
+        """Parse provider-specific streaming chunk."""
         return FreeFlowResponse.from_dict(
             {
                 "id": chunk_data.get("id", f"chatcmpl-{int(time.time())}"),
