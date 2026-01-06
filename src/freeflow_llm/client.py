@@ -101,8 +101,11 @@ class FreeFlowClient:
 
         for provider in self.providers:
             try:
+                num_keys = len(provider.api_keys) if hasattr(provider, "api_keys") else 1
                 if self.verbose:
-                    logger.info(f"Attempting provider: {provider.name}")
+                    logger.info(
+                        f"Attempting provider: {provider.name} (with {num_keys} API key(s))"
+                    )
 
                 completion = provider.chat(
                     messages=messages,
@@ -119,9 +122,13 @@ class FreeFlowClient:
                 return completion
 
             except RateLimitError as e:
-                attempts.append(f"{provider.name}: rate limited")
+                num_keys = len(provider.api_keys) if hasattr(provider, "api_keys") else 1
+                attempts.append(f"{provider.name}: rate limited (tried {num_keys} key(s))")
                 if self.verbose:
-                    logger.warning(f"Rate limit hit on {provider.name}, trying next provider...")
+                    logger.warning(
+                        f"Rate limit hit on all {num_keys} key(s) for {provider.name}, "
+                        f"trying next provider..."
+                    )
                 last_error = e
                 continue
 
@@ -182,8 +189,11 @@ class FreeFlowClient:
 
         for provider in self.providers:
             try:
+                num_keys = len(provider.api_keys) if hasattr(provider, "api_keys") else 1
                 if self.verbose:
-                    logger.info(f"Attempting provider: {provider.name}")
+                    logger.info(
+                        f"Attempting provider: {provider.name} (with {num_keys} API key(s))"
+                    )
 
                 yield from provider.chat_stream(
                     messages=messages,
@@ -200,9 +210,13 @@ class FreeFlowClient:
                 return
 
             except RateLimitError as e:
-                attempts.append(f"{provider.name}: rate limited")
+                num_keys = len(provider.api_keys) if hasattr(provider, "api_keys") else 1
+                attempts.append(f"{provider.name}: rate limited (tried {num_keys} key(s))")
                 if self.verbose:
-                    logger.warning(f"Rate limit hit on {provider.name}, trying next provider...")
+                    logger.warning(
+                        f"Rate limit hit on all {num_keys} key(s) for {provider.name}, "
+                        f"trying next provider..."
+                    )
                 last_error = e
                 continue
 

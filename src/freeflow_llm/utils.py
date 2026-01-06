@@ -44,6 +44,48 @@ def get_api_key(provider: str) -> Optional[str]:
     return None
 
 
+def get_api_keys(provider: str) -> list[str]:
+    """
+    Get API keys for a specific provider. Supports multiple keys.
+
+    Formats supported:
+    - Single key: PROVIDER_API_KEY=abc123
+    - Multiple keys (JSON array): PROVIDER_API_KEY=["key1", "key2", "key3"]
+    - Multiple keys (comma-separated): PROVIDER_API_KEY=key1,key2,key3
+
+    Args:
+        provider: Provider name (e.g., 'groq', 'gemini')
+
+    Returns:
+        List of API keys (empty if none found)
+    """
+    key_mapping = {
+        "groq": "GROQ_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+    }
+
+    env_key = key_mapping.get(provider.lower())
+    if not env_key:
+        return []
+
+    value = get_env_var(env_key)
+    if not value:
+        return []
+
+    if value.strip().startswith("[") and value.strip().endswith("]"):
+        try:
+            keys = json.loads(value)
+            if isinstance(keys, list):
+                return [str(k).strip() for k in keys if k]
+        except json.JSONDecodeError:
+            pass
+
+    if "," in value:
+        return [k.strip() for k in value.split(",") if k.strip()]
+
+    return [value.strip()]
+
+
 def is_rate_limit_error(status_code: int, error_message: str = "") -> bool:
     """
     Check if an error is a rate limit error.

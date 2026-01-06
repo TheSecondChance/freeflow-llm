@@ -1,13 +1,21 @@
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import httpx
 
 from ..config import DEFAULT_MODELS
 from ..exceptions import ProviderError, RateLimitError
 from ..models import FreeFlowResponse
-from ..utils import extract_error_message, get_api_key, is_rate_limit_error, parse_sse_line
+from ..utils import (
+    extract_error_message,
+    get_api_keys,
+    is_rate_limit_error,
+    parse_sse_line,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class BaseProvider(ABC):
@@ -22,21 +30,57 @@ class BaseProvider(ABC):
     - parse_stream_chunk() - transform streaming chunk to FreeFlowResponse
     """
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[Union[str, list[str]]] = None):
         """
         Initialize the provider.
 
         Args:
-            api_key: API key for the provider. If None, will try to load from environment.
+            api_key: API key(s) for the provider. Can be a single key or list of keys.
+                    If None, will try to load from environment.
         """
         self.name = self.__class__.__name__.replace("Provider", "").lower()
-        self.api_key = api_key or get_api_key(self.name)
+
+        if api_key is None:
+            self.api_keys = get_api_keys(self.name)
+        elif isinstance(api_key, list):
+            self.api_keys = api_key
+        else:
+            self.api_keys = [api_key]
+
+        self.current_key_index = 0
         self.client = httpx.Client(timeout=30.0)
         self.stream_client = httpx.Client(timeout=60.0)
 
+    @property
+    def api_key(self) -> Optional[str]:
+        """Get the current API key."""
+        if self.api_keys and 0 <= self.current_key_index < len(self.api_keys):
+            return self.api_keys[self.current_key_index]
+        return None
+
     def is_available(self) -> bool:
         """Check if this provider is available (has valid API key)."""
-        return self.api_key is not None
+        return len(self.api_keys) > 0
+
+    def rotate_key(self) -> bool:
+        """
+        Rotate to the next API key.
+
+        Returns:
+            True if rotated to a new key, False if no more keys available
+        """
+        if self.current_key_index < len(self.api_keys) - 1:
+            self.current_key_index += 1
+            return True
+        return False
+
+    def reset_key_index(self) -> None:
+        """Reset to the first API key."""
+        self.current_key_index = 0
+
+    def has_more_keys(self) -> bool:
+        """Check if there are more API keys to try."""
+        return self.current_key_index < len(self.api_keys) - 1
 
     @abstractmethod
     def get_api_base_url(self) -> str:
@@ -149,7 +193,7 @@ class BaseProvider(ABC):
         **kwargs: Any,
     ) -> FreeFlowResponse:
         """
-        Create a chat completion.
+        Create a chat completion with automatic key rotation on rate limits.
 
         Args:
             messages: List of message dictionaries with 'role' and 'content'
@@ -163,7 +207,7 @@ class BaseProvider(ABC):
             FreeFlowResponse object
 
         Raises:
-            RateLimitError: If rate limit is hit
+            RateLimitError: If rate limit is hit on all API keys
             ProviderError: For other provider errors
         """
         if not self.is_available():
@@ -172,14 +216,52 @@ class BaseProvider(ABC):
         if model is None:
             model = DEFAULT_MODELS.get(self.name, "default")
 
-        endpoint_path, json_data = self.build_request_payload(
-            messages, temperature, max_tokens, top_p, model, stream=False, **kwargs
-        )
-        headers = self.build_request_headers()
-        url = f"{self.get_api_base_url()}{endpoint_path}"
+        # Try all available API keys
+        last_error: Optional[Exception] = None
+        keys_tried = 0
 
-        response_data = self._make_request(url, headers, json_data)
-        return self.parse_response(response_data, model)
+        while keys_tried < len(self.api_keys):
+            try:
+                logger.info(
+                    f"{self.name}: Trying API key {self.current_key_index + 1}/{len(self.api_keys)}"
+                )
+
+                endpoint_path, json_data = self.build_request_payload(
+                    messages, temperature, max_tokens, top_p, model, stream=False, **kwargs
+                )
+                headers = self.build_request_headers()
+                url = f"{self.get_api_base_url()}{endpoint_path}"
+
+                response_data = self._make_request(url, headers, json_data)
+                self.reset_key_index()
+
+                return self.parse_response(response_data, model)
+
+            except RateLimitError as e:
+                last_error = e
+                keys_tried += 1
+
+                logger.warning(
+                    f"{self.name}: Rate limit hit on key {self.current_key_index + 1}/{len(self.api_keys)}"
+                )
+
+                if self.rotate_key():
+                    continue
+                else:
+                    self.reset_key_index()
+                    raise RateLimitError(
+                        self.name, f"Rate limit hit on all {len(self.api_keys)} API key(s)"
+                    ) from e
+
+            except (ProviderError, Exception):
+                self.reset_key_index()
+                raise
+
+        # Shouldn't reach here, but just in case
+        self.reset_key_index()
+        if last_error:
+            raise last_error
+        raise ProviderError(self.name, "Unknown error occurred")
 
     def chat_stream(
         self,
@@ -191,7 +273,7 @@ class BaseProvider(ABC):
         **kwargs: Any,
     ) -> Iterator[FreeFlowResponse]:
         """
-        Create a streaming chat completion.
+        Create a streaming chat completion with automatic key rotation on rate limits.
 
         Args:
             messages: List of message dictionaries with 'role' and 'content'
@@ -205,7 +287,7 @@ class BaseProvider(ABC):
             FreeFlowResponse objects with partial content
 
         Raises:
-            RateLimitError: If rate limit is hit
+            RateLimitError: If rate limit is hit on all API keys
             ProviderError: For other provider errors
         """
         if not self.is_available():
@@ -214,20 +296,59 @@ class BaseProvider(ABC):
         if model is None:
             model = DEFAULT_MODELS.get(self.name, "default")
 
-        endpoint_path, json_data = self.build_request_payload(
-            messages, temperature, max_tokens, top_p, model, stream=True, **kwargs
-        )
-        headers = self.build_request_headers()
-        url = f"{self.get_api_base_url()}{endpoint_path}"
+        # Try all available API keys
+        last_error: Optional[Exception] = None
+        keys_tried = 0
 
-        for line in self._stream_request(url, headers, json_data):
-            chunk_data = parse_sse_line(line)
-            if chunk_data is None:
-                continue
+        while keys_tried < len(self.api_keys):
+            try:
+                logger.info(
+                    f"{self.name}: Trying API key {self.current_key_index + 1}/{len(self.api_keys)} (streaming)"
+                )
 
-            chunk = self.parse_stream_chunk(chunk_data, model)
-            if chunk is not None:
-                yield chunk
+                endpoint_path, json_data = self.build_request_payload(
+                    messages, temperature, max_tokens, top_p, model, stream=True, **kwargs
+                )
+                headers = self.build_request_headers()
+                url = f"{self.get_api_base_url()}{endpoint_path}"
+
+                for line in self._stream_request(url, headers, json_data):
+                    chunk_data = parse_sse_line(line)
+                    if chunk_data is None:
+                        continue
+
+                    chunk = self.parse_stream_chunk(chunk_data, model)
+                    if chunk is not None:
+                        yield chunk
+
+                self.reset_key_index()
+                return
+
+            except RateLimitError as e:
+                last_error = e
+                keys_tried += 1
+
+                logger.warning(
+                    f"{self.name}: Rate limit hit on key {self.current_key_index + 1}/{len(self.api_keys)} (streaming)"
+                )
+
+                if self.rotate_key():
+                    continue
+                else:
+                    self.reset_key_index()
+                    raise RateLimitError(
+                        self.name, f"Rate limit hit on all {len(self.api_keys)} API key(s)"
+                    ) from e
+
+            except (ProviderError, Exception):
+                self.reset_key_index()
+                raise
+
+        # Shouldn't reach here, but just in case
+        self.reset_key_index()
+        if last_error:
+            raise last_error
+        raise ProviderError(self.name, "Unknown error occurred")
 
     def __del__(self):
         """Clean up HTTP clients."""
