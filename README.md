@@ -15,7 +15,7 @@ FreeFlow LLM is a lightweight Python package that lets you use powerful LLMs com
 - **100% Free-Tier Only** — No paid tiers, no credit card required
 - **Automatic Fallback** — Detects rate limits (HTTP 429) and switches providers instantly
 - **Smart Prioritization** — Starts with fastest providers (Groq), falls back to others
-- **OpenAI-Compatible API** — Familiar `client.chat.completions.create()` interface
+- **Clean & Unified API** — Simple and consistent `client.chat()` interface across all providers
 - **Lightweight & Simple** — Minimal dependencies, easy to use
 - **16,000+ Requests/Day** — Aggregate free usage across all providers
 
