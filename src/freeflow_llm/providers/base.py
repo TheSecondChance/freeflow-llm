@@ -350,6 +350,27 @@ class BaseProvider(ABC):
             raise last_error
         raise ProviderError(self.name, "Unknown error occurred")
 
+    def close(self) -> None:
+        """
+        Close HTTP clients and clean up resources.
+
+        This method should be called when the provider is no longer needed
+        to ensure proper cleanup of HTTP connections.
+        """
+        try:
+            self.client.close()
+            self.stream_client.close()
+        except Exception as e:
+            logger.warning(f"Error closing {self.name} provider clients: {e}")
+
+    def __enter__(self) -> "BaseProvider":
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Exit context manager and clean up resources."""
+        self.close()
+
     def __del__(self):
         """Clean up HTTP clients."""
         try:

@@ -25,15 +25,27 @@ class FreeFlowClient:
     Example:
         ```python
         from freeflow_llm import FreeFlowClient
+        # Use context manager for automatic cleanup
+        with FreeFlowClient() as client:
+            response = client.chat(
+                messages=[
+                    {"role": "user", "content": "Hello!"}
+                ]
+            )
+            print(response.content)
+        # Resources are automatically cleaned up when exiting the 'with' block
 
+        # Or manually Basic usage
         client = FreeFlowClient()
-        response = client.chat(
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": "What is the capital of France?"}
-            ]
-        )
-        print(response.content)
+        try:
+            response = client.chat(
+                messages=[
+                    {"role": "user", "content": "Hello!"}
+                ]
+            )
+            print(response.content)
+        finally:
+            client.close()  # Clean up resources
         ```
     """
 
@@ -249,6 +261,28 @@ class FreeFlowClient:
             list of provider names
         """
         return [p.name for p in self.providers]
+
+    def close(self) -> None:
+        """
+        Close all providers and clean up resources.
+
+        This method should be called when the client is no longer needed
+        to ensure proper cleanup of HTTP connections and other resources.
+        """
+        for provider in self.providers:
+            try:
+                provider.close()
+            except Exception as e:
+                if self.verbose:
+                    logger.warning(f"Error closing provider {provider.name}: {e}")
+
+    def __enter__(self) -> "FreeFlowClient":
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Exit context manager and clean up resources."""
+        self.close()
 
     def __repr__(self) -> str:
         providers_str = ", ".join(self.list_providers())
