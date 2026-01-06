@@ -39,7 +39,7 @@ Set them as environment variables:
 
 ```bash
 export GROQ_API_KEY="your_groq_key"
-export GOOGLE_API_KEY="your_google_key"
+export GEMINI_API_KEY="your_gemini_key"
 export GITHUB_TOKEN="your_github_token"
 ```
 
@@ -47,9 +47,32 @@ Or create a `.env` file:
 
 ```env
 GROQ_API_KEY=your_groq_key
-GOOGLE_API_KEY=your_google_key
+GEMINI_API_KEY=your_gemini_key
 GITHUB_TOKEN=your_github_token
 ```
+
+#### Multiple API Keys per Provider (New!)
+
+You can now configure **multiple API keys** for each provider. When rate limits are hit, FreeFlow will automatically rotate through all available keys before moving to the next provider:
+
+**Format 1: JSON Array** (recommended for complex keys):
+```bash
+export GEMINI_API_KEY='["key1", "key2", "key3"]'
+export GROQ_API_KEY='["groq_key1", "groq_key2"]'
+```
+
+**Format 2: Comma-Separated** (simpler):
+```bash
+export GEMINI_API_KEY="key1,key2,key3"
+export GROQ_API_KEY="groq_key1,groq_key2"
+```
+
+**Format 3: Single Key** (traditional):
+```bash
+export GEMINI_API_KEY="single_key"
+```
+
+With multiple keys, your effective rate limit multiplies! For example, 3 Gemini keys = 4,500 requests/day instead of 1,500.
 
 ### Basic Usage
 
@@ -129,7 +152,36 @@ response = client.chat(
 ```python
 client = FreeFlowClient()
 print(client.list_providers())
-# Output: ['groq', 'gemini', 'github']
+# Output: ['groq', 'gemini']
+
+# Check how many keys are loaded per provider
+for provider in client.providers:
+    num_keys = len(provider.api_keys)
+    print(f"{provider.name}: {num_keys} API key(s)")
+# Output:
+# groq: 2 API key(s)
+# gemini: 3 API key(s)
+```
+
+### Custom Provider Configuration
+
+```python
+from freeflow_llm import FreeFlowClient
+from freeflow_llm.providers import GeminiProvider, GroqProvider
+
+# Option 1: Pass multiple keys directly to providers
+custom_providers = [
+    GroqProvider(api_key=["key1", "key2"]),
+    GeminiProvider(api_key=["key1", "key2", "key3"]),
+]
+client = FreeFlowClient(providers=custom_providers)
+
+# Option 2: Single key per provider
+custom_providers = [
+    GroqProvider(api_key="single_key"),
+    GeminiProvider(api_key="single_key"),
+]
+client = FreeFlowClient(providers=custom_providers)
 ```
 
 ## 📊 Provider Details
