@@ -82,24 +82,23 @@ With multiple keys, your effective rate limit multiplies! For example, 3 Gemini 
 ```python
 from freeflow_llm import FreeFlowClient
 
-# Initialize client (auto-loads API keys from environment)
-client = FreeFlowClient()
+# Use context manager for automatic resource cleanup (recommended)
+with FreeFlowClient() as client:
+    response = client.chat(
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "What is the capital of Ethiopia?"}
+        ],
+        temperature=0.7,
+        max_tokens=100
+    )
 
-# Simple, clean API
-response = client.chat(
-    messages=[
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "What is the capital of Ethiopia?"}
-    ],
-    temperature=0.7,
-    max_tokens=100
-)
+    print(response.content)
+    # Output: "The capital of Ethiopia is Addis Ababa."
 
-print(response.content)
-# Output: "The capital of Ethiopia is Addis Ababa."
-
-print(f"Provider used: {response.provider}")
-# Output: "Provider used: groq" (or whichever provider responded)
+    print(f"Provider used: {response.provider}")
+    # Output: "Provider used: groq" (or whichever provider responded)
+# Resources (HTTP connections) are automatically closed here
 ```
 
 That's it! FreeFlow will automatically try providers in order and handle rate limits transparently.
@@ -109,35 +108,20 @@ That's it! FreeFlow will automatically try providers in order and handle rate li
 ```python
 from freeflow_llm import FreeFlowClient, NoProvidersAvailableError
 
-client = FreeFlowClient()
-
-try:
-    response = client.chat(
-        messages=[{"role": "user", "content": "Hello!"}]
-    )
-    print(response.content)
-except NoProvidersAvailableError as e:
-    print(f"All providers exhausted: {e}")
-    # Handle gracefully or retry later
-```
-
-### Resource Management (Context Manager)
-
-For long-running applications, use the context manager pattern to automatically clean up resources:
-
-```python
-from freeflow_llm import FreeFlowClient
-
-# Recommended: Use context manager for automatic cleanup
 with FreeFlowClient() as client:
-    response = client.chat(
-        messages=[{"role": "user", "content": "Hello!"}]
-    )
-    print(response.content)
-# Resources (HTTP connections) are automatically closed here
+    try:
+        response = client.chat(
+            messages=[{"role": "user", "content": "Hello!"}]
+        )
+        print(response.content)
+    except NoProvidersAvailableError as e:
+        print(f"All providers exhausted: {e}")
+        # Handle gracefully or retry later
 ```
 
-Or manually call `close()`:
+### Manual Resource Management
+
+If you need more control, you can manually manage resources:
 
 ```python
 client = FreeFlowClient()
