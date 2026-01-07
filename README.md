@@ -56,18 +56,21 @@ GITHUB_TOKEN=your_github_token
 You can now configure **multiple API keys** for each provider. When rate limits are hit, FreeFlow will automatically rotate through all available keys before moving to the next provider:
 
 **Format 1: JSON Array** (recommended for complex keys):
+
 ```bash
 export GEMINI_API_KEY='["key1", "key2", "key3"]'
 export GROQ_API_KEY='["groq_key1", "groq_key2"]'
 ```
 
 **Format 2: Comma-Separated** (simpler):
+
 ```bash
 export GEMINI_API_KEY="key1,key2,key3"
 export GROQ_API_KEY="groq_key1,groq_key2"
 ```
 
 **Format 3: Single Key** (traditional):
+
 ```bash
 export GEMINI_API_KEY="single_key"
 ```
@@ -117,6 +120,40 @@ except NoProvidersAvailableError as e:
     print(f"All providers exhausted: {e}")
     # Handle gracefully or retry later
 ```
+
+### Resource Management (Context Manager)
+
+For long-running applications, use the context manager pattern to automatically clean up resources:
+
+```python
+from freeflow_llm import FreeFlowClient
+
+# Recommended: Use context manager for automatic cleanup
+with FreeFlowClient() as client:
+    response = client.chat(
+        messages=[{"role": "user", "content": "Hello!"}]
+    )
+    print(response.content)
+# Resources (HTTP connections) are automatically closed here
+```
+
+Or manually call `close()`:
+
+```python
+client = FreeFlowClient()
+try:
+    response = client.chat(messages=[{"role": "user", "content": "Hello!"}])
+    print(response.content)
+finally:
+    client.close()  # Clean up resources
+```
+
+**Why use context managers?**
+
+- Prevents memory leaks in long-running applications
+- Ensures proper cleanup of HTTP connections
+- Prevents resource exhaustion warnings
+- Best practice for production code
 
 ## 🔧 Advanced Configuration
 

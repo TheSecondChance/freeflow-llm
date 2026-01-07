@@ -8,15 +8,25 @@ Example:
     ```python
     from freeflow_llm import FreeFlowClient
 
+    # Recommended: Use context manager for automatic resource cleanup
+    with FreeFlowClient() as client:
+        response = client.chat(
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "What is the capital of France?"}
+            ]
+        )
+        print(response.content)
+        print(f"Response from: {response.provider}")
+    # Resources are automatically cleaned up here
+
+    # Or without context manager (remember to call close())
     client = FreeFlowClient()
     response = client.chat(
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": "What is the capital of France?"}
-        ]
+        messages=[{"role": "user", "content": "Hello!"}]
     )
     print(response.content)
-    print(f"Response from: {response.provider}")
+    client.close()  # Clean up resources
     ```
 """
 
