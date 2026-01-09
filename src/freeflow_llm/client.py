@@ -10,9 +10,8 @@ from .providers import (
     GroqProvider,
 )
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 class FreeFlowClient:
