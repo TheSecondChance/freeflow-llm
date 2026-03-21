@@ -10,7 +10,7 @@ FreeFlow LLM is a lightweight Python package that lets you use powerful LLMs com
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Type checked: mypy](https://img.shields.io/badge/type%20checked-mypy-blue.svg)](https://github.com/python/mypy)
 
-## ✨ Features
+## Features
 
 - **100% Free-Tier Only** — No paid tiers, no credit card required
 - **Automatic Fallback** — Detects rate limits (HTTP 429) and switches providers instantly
@@ -239,12 +239,12 @@ pre-commit install
 
 We maintain **strict code quality standards**. All PRs must pass:
 
-✅ **Black** - Code formatting  
-✅ **Ruff** - Linting & code quality  
-✅ **MyPy** - Type checking  
-✅ **Circular Import Detection**  
-✅ **Import Safety Checks**  
-✅ **All Tests**
+**Black** - Code formatting  
+**Ruff** - Linting & code quality  
+**MyPy** - Type checking  
+**Circular Import Detection**  
+**Import Safety Checks**  
+**All Tests**
 
 **Check your code**:
 
@@ -270,7 +270,7 @@ pytest tests/ -v
 pytest tests/ --cov=src/freeflow_llm  # With coverage
 ```
 
-## 🤝 Contributing
+##  Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
@@ -282,15 +282,15 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 - Improve error handling
 - Write more tests
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## ⚠️ Disclaimer
+## Disclaimer
 
 This package is designed for free-tier usage only. Please respect each provider's rate limits and terms of service. FreeFlow LLM is not affiliated with any of the LLM providers.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - **Groq** for their blazingly fast free tier
 - **Google** for Gemini API
