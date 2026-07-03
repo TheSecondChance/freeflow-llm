@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 from typing import Any, Optional
@@ -141,6 +142,9 @@ def extract_error_message(response: httpx.Response) -> str:
     Returns:
         Error message string
     """
+    with contextlib.suppress(Exception):
+        response.read()
+
     try:
         error_data = response.json()
 
@@ -158,4 +162,7 @@ def extract_error_message(response: httpx.Response) -> str:
         return str(error_data)
 
     except Exception:
-        return response.text or f"HTTP {response.status_code}"
+        try:
+            return response.text or f"HTTP {response.status_code}"
+        except Exception:
+            return f"HTTP {response.status_code}"

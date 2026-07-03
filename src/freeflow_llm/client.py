@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any, Optional
 
 from .exceptions import NoProvidersAvailableError, ProviderError, RateLimitError
@@ -252,6 +252,187 @@ class FreeFlowClient:
             f"All providers exhausted. Attempts:\n{error_summary}\n\nLast error: {last_error}"
         )
 
+    async def async_chat(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float = 1.0,
+        max_tokens: Optional[int] = None,
+        top_p: float = 1.0,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> FreeFlowResponse:
+        """
+        Create an async chat completion with automatic provider fallback.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            temperature: Sampling temperature (0-2)
+            max_tokens: Maximum tokens to generate
+            top_p: Nucleus sampling parameter
+            model: Optional model name (provider-specific)
+            **kwargs: Additional parameters
+
+        Returns:
+            FreeFlowResponse with the completion result
+
+        Raises:
+            NoProvidersAvailableError: If all providers fail
+        """
+        if not self.providers:
+            raise NoProvidersAvailableError(
+                "No providers configured. Please set API keys in environment variables."
+            )
+
+        last_error: Optional[Exception] = None
+        attempts: list[str] = []
+
+        for provider in self.providers:
+            try:
+                num_keys = len(provider.api_keys) if hasattr(provider, "api_keys") else 1
+                if self.verbose:
+                    logger.info(
+                        f"Attempting provider: {provider.name} (with {num_keys} API key(s)) [async]"
+                    )
+
+                completion = await provider.async_chat(
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    top_p=top_p,
+                    model=model,
+                    **kwargs,
+                )
+
+                if self.verbose:
+                    logger.info(f"Success with provider: {provider.name} [async]")
+
+                return completion
+
+            except RateLimitError as e:
+                num_keys = len(provider.api_keys) if hasattr(provider, "api_keys") else 1
+                attempts.append(f"{provider.name}: rate limited (tried {num_keys} key(s))")
+                if self.verbose:
+                    logger.warning(
+                        f"Rate limit hit on all {num_keys} key(s) for {provider.name}, "
+                        f"trying next provider... [async]"
+                    )
+                last_error = e
+                continue
+
+            except ProviderError as e:
+                attempts.append(f"{provider.name}: {str(e)}")
+                if self.verbose:
+                    logger.warning(
+                        f"Error with {provider.name}: {str(e)}, trying next provider... [async]"
+                    )
+                last_error = e
+                continue
+
+            except Exception as e:
+                attempts.append(f"{provider.name}: unexpected error")
+                if self.verbose:
+                    logger.warning(
+                        f"Unexpected error with {provider.name}: {str(e)}, trying next provider... [async]"
+                    )
+                last_error = e
+                continue
+
+        error_summary = "\n".join(f"  - {attempt}" for attempt in attempts)
+        raise NoProvidersAvailableError(
+            f"All providers exhausted. Attempts:\n{error_summary}\n\nLast error: {last_error}"
+        )
+
+    async def async_chat_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float = 1.0,
+        max_tokens: Optional[int] = None,
+        top_p: float = 1.0,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[FreeFlowResponse]:
+        """
+        Create an async streaming chat completion with automatic provider fallback.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            temperature: Sampling temperature (0-2)
+            max_tokens: Maximum tokens to generate
+            top_p: Nucleus sampling parameter
+            model: Optional model name (provider-specific)
+            **kwargs: Additional parameters
+
+        Yields:
+            FreeFlowResponse objects with partial content
+
+        Raises:
+            NoProvidersAvailableError: If all providers fail
+        """
+        if not self.providers:
+            raise NoProvidersAvailableError(
+                "No providers configured. Please set API keys in environment variables."
+            )
+
+        last_error: Optional[Exception] = None
+        attempts: list[str] = []
+
+        for provider in self.providers:
+            try:
+                num_keys = len(provider.api_keys) if hasattr(provider, "api_keys") else 1
+                if self.verbose:
+                    logger.info(
+                        f"Attempting provider: {provider.name} (with {num_keys} API key(s)) [async stream]"
+                    )
+
+                async for chunk in provider.async_chat_stream(
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    top_p=top_p,
+                    model=model,
+                    **kwargs,
+                ):
+                    yield chunk
+
+                if self.verbose:
+                    logger.info(f"Success with provider: {provider.name} [async stream]")
+
+                return
+
+            except RateLimitError as e:
+                num_keys = len(provider.api_keys) if hasattr(provider, "api_keys") else 1
+                attempts.append(f"{provider.name}: rate limited (tried {num_keys} key(s))")
+                if self.verbose:
+                    logger.warning(
+                        f"Rate limit hit on all {num_keys} key(s) for {provider.name}, "
+                        f"trying next provider... [async stream]"
+                    )
+                last_error = e
+                continue
+
+            except ProviderError as e:
+                attempts.append(f"{provider.name}: {str(e)}")
+                if self.verbose:
+                    logger.warning(
+                        f"Error with {provider.name}: {str(e)}, trying next provider... [async stream]"
+                    )
+                last_error = e
+                continue
+
+            except Exception as e:
+                attempts.append(f"{provider.name}: unexpected error")
+                if self.verbose:
+                    logger.warning(
+                        f"Unexpected error with {provider.name}: {str(e)}, trying next provider... [async stream]"
+                    )
+                last_error = e
+                continue
+
+        error_summary = "\n".join(f"  - {attempt}" for attempt in attempts)
+        raise NoProvidersAvailableError(
+            f"All providers exhausted. Attempts:\n{error_summary}\n\nLast error: {last_error}"
+        )
+
     def list_providers(self) -> list[str]:
         """
         List all available providers.
@@ -275,6 +456,20 @@ class FreeFlowClient:
                 if self.verbose:
                     logger.warning(f"Error closing provider {provider.name}: {e}")
 
+    async def aclose(self) -> None:
+        """
+        Async close all providers and clean up resources.
+
+        This method should be called when the client is no longer needed
+        in an async context to ensure proper cleanup of HTTP connections and other resources.
+        """
+        for provider in self.providers:
+            try:
+                await provider.aclose()
+            except Exception as e:
+                if self.verbose:
+                    logger.warning(f"Error closing provider {provider.name}: {e}")
+
     def __enter__(self) -> "FreeFlowClient":
         """Enter context manager."""
         return self
@@ -282,6 +477,14 @@ class FreeFlowClient:
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Exit context manager and clean up resources."""
         self.close()
+
+    async def __aenter__(self) -> "FreeFlowClient":
+        """Enter async context manager."""
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Exit async context manager and clean up resources."""
+        await self.aclose()
 
     def __repr__(self) -> str:
         providers_str = ", ".join(self.list_providers())

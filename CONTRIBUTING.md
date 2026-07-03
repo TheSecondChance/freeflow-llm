@@ -1,6 +1,6 @@
 # Contributing to FreeFlow LLM
 
-Thank you for your interest in contributing to FreeFlow LLM! 🎉
+Thank you for your interest in contributing to FreeFlow LLM!
 
 ## How to Contribute
 

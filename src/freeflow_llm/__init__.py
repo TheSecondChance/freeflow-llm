@@ -46,7 +46,7 @@ from .providers import (
     GroqProvider,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.1.4"
 __author__ = "FreeFlow Contributors"
 __all__ = [
     "FreeFlowClient",

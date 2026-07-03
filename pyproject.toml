@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "freeflow-llm"
-version = "0.1.3"
+version = "0.1.4"
 description = "Chain multiple free-tier LLM APIs with automatic rate limit fallback"
 authors = [{name = "FreeFlow Contributors"}]
 readme = "README.md"

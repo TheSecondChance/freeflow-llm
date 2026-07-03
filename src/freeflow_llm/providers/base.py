@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any, Optional, Union
 
 import httpx
@@ -50,6 +50,9 @@ class BaseProvider(ABC):
         self.current_key_index = 0
         self.client = httpx.Client(timeout=30.0)
         self.stream_client = httpx.Client(timeout=60.0)
+        # Async clients are lazily initialized to avoid overhead when not used
+        self._async_client: Optional[httpx.AsyncClient] = None
+        self._async_stream_client: Optional[httpx.AsyncClient] = None
 
     @property
     def api_key(self) -> Optional[str]:
@@ -161,8 +164,86 @@ class BaseProvider(ABC):
                 headers=headers,
                 json=json_data,
             ) as response:
+                if response.is_error:
+                    response.read()
                 response.raise_for_status()
                 for line in response.iter_lines():
+                    line = line.strip()
+                    if line.startswith("data: "):
+                        data = line[6:]
+                        if data == "[DONE]":
+                            break
+                        yield data
+
+        except httpx.HTTPStatusError as e:
+            error_msg = extract_error_message(e.response)
+            if is_rate_limit_error(e.response.status_code, error_msg):
+                raise RateLimitError(self.name, error_msg) from e
+            raise ProviderError(self.name, error_msg) from e
+        except httpx.TimeoutException as e:
+            raise ProviderError(self.name, f"Request timeout: {str(e)}") from e
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str or is_rate_limit_error(0, error_str):
+                raise RateLimitError(self.name, error_str) from e
+            raise ProviderError(self.name, error_str) from e
+
+    @property
+    def async_client(self) -> httpx.AsyncClient:
+        """Lazily initialize and return the async HTTP client."""
+        if self._async_client is None:
+            self._async_client = httpx.AsyncClient(timeout=30.0)
+        return self._async_client
+
+    @property
+    def async_stream_client(self) -> httpx.AsyncClient:
+        """Lazily initialize and return the async streaming HTTP client."""
+        if self._async_stream_client is None:
+            self._async_stream_client = httpx.AsyncClient(timeout=60.0)
+        return self._async_stream_client
+
+    async def _async_make_request(
+        self, endpoint: str, headers: dict[str, str], json_data: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Internal async method to make HTTP requests with error handling."""
+        try:
+            response = await self.async_client.post(
+                endpoint,
+                headers=headers,
+                json=json_data,
+            )
+            response.raise_for_status()
+            result: dict[str, Any] = response.json()
+            return result
+
+        except httpx.HTTPStatusError as e:
+            error_msg = extract_error_message(e.response)
+            if is_rate_limit_error(e.response.status_code, error_msg):
+                raise RateLimitError(self.name, error_msg) from e
+            raise ProviderError(self.name, error_msg) from e
+        except httpx.TimeoutException as e:
+            raise ProviderError(self.name, f"Request timeout: {str(e)}") from e
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str or is_rate_limit_error(0, error_str):
+                raise RateLimitError(self.name, error_str) from e
+            raise ProviderError(self.name, error_str) from e
+
+    async def _async_stream_request(
+        self, endpoint: str, headers: dict[str, str], json_data: dict[str, Any]
+    ) -> AsyncIterator[str]:
+        """Internal async method to make streaming HTTP requests with SSE support."""
+        try:
+            async with self.async_stream_client.stream(
+                "POST",
+                endpoint,
+                headers=headers,
+                json=json_data,
+            ) as response:
+                if response.is_error:
+                    await response.aread()
+                response.raise_for_status()
+                async for line in response.aiter_lines():
                     line = line.strip()
                     if line.startswith("data: "):
                         data = line[6:]
@@ -350,6 +431,173 @@ class BaseProvider(ABC):
             raise last_error
         raise ProviderError(self.name, "Unknown error occurred")
 
+    async def async_chat(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float = 1.0,
+        max_tokens: Optional[int] = None,
+        top_p: float = 1.0,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> FreeFlowResponse:
+        """
+        Create an async chat completion with automatic key rotation on rate limits.
+
+        Args:
+            messages: List of message dictionaries with 'role' and 'content'
+            temperature: Sampling temperature (0-2)
+            max_tokens: Maximum tokens to generate
+            top_p: Nucleus sampling parameter
+            model: Optional model name (provider-specific)
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            FreeFlowResponse object
+
+        Raises:
+            RateLimitError: If rate limit is hit on all API keys
+            ProviderError: For other provider errors
+        """
+        if not self.is_available():
+            raise ProviderError(self.name, f"{self.name.capitalize()} API key missing")
+
+        if model is None:
+            model = DEFAULT_MODELS.get(self.name, "default")
+
+        # Try all available API keys
+        last_error: Optional[Exception] = None
+        keys_tried = 0
+
+        while keys_tried < len(self.api_keys):
+            try:
+                logger.info(
+                    f"{self.name}: Trying API key {self.current_key_index + 1}/{len(self.api_keys)} (async)"
+                )
+
+                endpoint_path, json_data = self.build_request_payload(
+                    messages, temperature, max_tokens, top_p, model, stream=False, **kwargs
+                )
+                headers = self.build_request_headers()
+                url = f"{self.get_api_base_url()}{endpoint_path}"
+
+                response_data = await self._async_make_request(url, headers, json_data)
+                self.reset_key_index()
+
+                return self.parse_response(response_data, model)
+
+            except RateLimitError as e:
+                last_error = e
+                keys_tried += 1
+
+                logger.warning(
+                    f"{self.name}: Rate limit hit on key {self.current_key_index + 1}/{len(self.api_keys)} (async)"
+                )
+
+                if self.rotate_key():
+                    continue
+                else:
+                    self.reset_key_index()
+                    raise RateLimitError(
+                        self.name, f"Rate limit hit on all {len(self.api_keys)} API key(s)"
+                    ) from e
+
+            except (ProviderError, Exception):
+                self.reset_key_index()
+                raise
+
+        # Shouldn't reach here, but just in case
+        self.reset_key_index()
+        if last_error:
+            raise last_error
+        raise ProviderError(self.name, "Unknown error occurred")
+
+    async def async_chat_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float = 1.0,
+        max_tokens: Optional[int] = None,
+        top_p: float = 1.0,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[FreeFlowResponse]:
+        """
+        Create an async streaming chat completion with automatic key rotation on rate limits.
+
+        Args:
+            messages: List of message dictionaries with 'role' and 'content'
+            temperature: Sampling temperature (0-2)
+            max_tokens: Maximum tokens to generate
+            top_p: Nucleus sampling parameter
+            model: Optional model name (provider-specific)
+            **kwargs: Additional provider-specific parameters
+
+        Yields:
+            FreeFlowResponse objects with partial content
+
+        Raises:
+            RateLimitError: If rate limit is hit on all API keys
+            ProviderError: For other provider errors
+        """
+        if not self.is_available():
+            raise ProviderError(self.name, f"{self.name.capitalize()} API key missing")
+
+        if model is None:
+            model = DEFAULT_MODELS.get(self.name, "default")
+
+        # Try all available API keys
+        last_error: Optional[Exception] = None
+        keys_tried = 0
+
+        while keys_tried < len(self.api_keys):
+            try:
+                logger.info(
+                    f"{self.name}: Trying API key {self.current_key_index + 1}/{len(self.api_keys)} (async streaming)"
+                )
+
+                endpoint_path, json_data = self.build_request_payload(
+                    messages, temperature, max_tokens, top_p, model, stream=True, **kwargs
+                )
+                headers = self.build_request_headers()
+                url = f"{self.get_api_base_url()}{endpoint_path}"
+
+                async for line in self._async_stream_request(url, headers, json_data):
+                    chunk_data = parse_sse_line(line)
+                    if chunk_data is None:
+                        continue
+
+                    chunk = self.parse_stream_chunk(chunk_data, model)
+                    if chunk is not None:
+                        yield chunk
+
+                self.reset_key_index()
+                return
+
+            except RateLimitError as e:
+                last_error = e
+                keys_tried += 1
+
+                logger.warning(
+                    f"{self.name}: Rate limit hit on key {self.current_key_index + 1}/{len(self.api_keys)} (async streaming)"
+                )
+
+                if self.rotate_key():
+                    continue
+                else:
+                    self.reset_key_index()
+                    raise RateLimitError(
+                        self.name, f"Rate limit hit on all {len(self.api_keys)} API key(s)"
+                    ) from e
+
+            except (ProviderError, Exception):
+                self.reset_key_index()
+                raise
+
+        # Shouldn't reach here, but just in case
+        self.reset_key_index()
+        if last_error:
+            raise last_error
+        raise ProviderError(self.name, "Unknown error occurred")
+
     def close(self) -> None:
         """
         Close HTTP clients and clean up resources.
@@ -361,7 +609,66 @@ class BaseProvider(ABC):
             self.client.close()
             self.stream_client.close()
         except Exception as e:
-            logger.warning(f"Error closing {self.name} provider clients: {e}")
+            logger.warning(f"Error closing {self.name} provider sync clients: {e}")
+
+        # Close async clients if they were initialized
+        if self._async_client is not None:
+            try:
+                # Note: For proper async cleanup, use aclose() instead
+                # This is a fallback for sync context cleanup
+                import asyncio
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._async_client.aclose())
+                except RuntimeError:
+                    # No running loop, just mark as None
+                    pass
+            except Exception as e:
+                logger.warning(f"Error closing {self.name} provider async client: {e}")
+            self._async_client = None
+
+        if self._async_stream_client is not None:
+            try:
+                import asyncio
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._async_stream_client.aclose())
+                except RuntimeError:
+                    pass
+            except Exception as e:
+                logger.warning(f"Error closing {self.name} provider async stream client: {e}")
+            self._async_stream_client = None
+
+    async def aclose(self) -> None:
+        """
+        Async close HTTP clients and clean up resources.
+
+        This method should be called when the provider is no longer needed
+        in an async context to ensure proper cleanup of HTTP connections.
+        """
+        # Close sync clients
+        try:
+            self.client.close()
+            self.stream_client.close()
+        except Exception as e:
+            logger.warning(f"Error closing {self.name} provider sync clients: {e}")
+
+        # Close async clients properly
+        if self._async_client is not None:
+            try:
+                await self._async_client.aclose()
+            except Exception as e:
+                logger.warning(f"Error closing {self.name} provider async client: {e}")
+            self._async_client = None
+
+        if self._async_stream_client is not None:
+            try:
+                await self._async_stream_client.aclose()
+            except Exception as e:
+                logger.warning(f"Error closing {self.name} provider async stream client: {e}")
+            self._async_stream_client = None
 
     def __enter__(self) -> "BaseProvider":
         """Enter context manager."""
@@ -371,6 +678,14 @@ class BaseProvider(ABC):
         """Exit context manager and clean up resources."""
         self.close()
 
+    async def __aenter__(self) -> "BaseProvider":
+        """Enter async context manager."""
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Exit async context manager and clean up resources."""
+        await self.aclose()
+
     def __del__(self):
         """Clean up HTTP clients."""
         try:
@@ -378,6 +693,8 @@ class BaseProvider(ABC):
             self.stream_client.close()
         except Exception:
             pass
+        # Note: We don't attempt to close async clients in __del__
+        # as it would require an async context
 
     def __str__(self) -> str:
         return self.name
