@@ -9,7 +9,7 @@ FreeFlow LLM is a lightweight Python package that lets you use powerful LLMs com
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-## ✨ Features
+## Features
 
 - **100% Free-Tier Only**: No paid tiers, no credit card required
 - **Automatic Fallback**: Detects rate limits (HTTP 429) and switches providers instantly
@@ -132,11 +132,11 @@ pre-commit install
 pytest tests/ -v
 ```
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-## ⚠️ Disclaimer
+## Disclaimer
 
 This package is designed for free-tier usage only. Please respect each provider's rate limits and terms of service. FreeFlow LLM is not affiliated with any of the LLM providers.
 
